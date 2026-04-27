@@ -12,6 +12,9 @@ COPY . ./
 # Install production dependencies.
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Disable training on startup for fast container boot (prevents port timeout)
+ENV TRAIN_MODELS_ON_STARTUP false
+
 # Run the web service on container startup using Uvicorn.
 # Using standard host and dynamic port assignment for PaaS providers
 CMD exec uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-10000}
