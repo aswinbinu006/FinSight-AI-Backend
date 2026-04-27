@@ -1,0 +1,1043 @@
+================================================================================
+    FINSIGHT AI — MODEL INTEGRATION GUIDE (PRODUCTION)
+    Complete Reference for Website Integration
+================================================================================
+
+    Created:  26 April 2026
+    Package:  finsight_models_production/
+    Author:   FinSight AI Team
+    Status:   Production-Ready (All thresholds passing)
+
+    This file is the SINGLE SOURCE OF TRUTH for integrating this 
+    model package into a Flask/Django/FastAPI website backend.
+    Drop the entire finsight_models_production/ folder into your web project 
+    and follow this guide.
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+    1.  PACKAGE OVERVIEW & FILE MAP
+    2.  INSTALLATION & DEPENDENCIES
+    3.  WEBSITE FLOW (6 STAGES)
+    4.  THE 10 BEHAVIORAL QUESTIONS (EXACT TEXT + DESIGN)
+    5.  THE 7 WASTE AUDIT QUESTIONS (EXACT TEXT + DESIGN)
+    6.  MODEL 1: CLUSTER MODEL — API REFERENCE
+    7.  MODEL 2: HEALTH MODEL — API REFERENCE
+    8.  MODEL 3: WASTE MODEL — API REFERENCE
+    9.  MODEL 4: GOAL MODEL — API REFERENCE
+    10. GEMINI BEHAVIORAL SCORING ENGINE
+    11. GEMINI EXPLANATION LAYER (explainer.py)
+    12. VALIDATION & OUTPUT RANGE CHECKS
+    13. METRIC THRESHOLDS (QUALITY GATES)
+    14. QUICK-START FLASK INTEGRATION EXAMPLE
+    15. ENVIRONMENT VARIABLES & CONFIGURATION
+    16. COMMON ERRORS & TROUBLESHOOTING
+
+
+================================================================================
+1. PACKAGE OVERVIEW & FILE MAP
+================================================================================
+
+finsight_models_production/
+├── __init__.py              → Package entry. Exports all models & functions.
+├── health_model.py          → HealthModel class (score + trend)
+├── waste_model.py           → WasteModel class (subscription waste detector)
+├── goal_model.py            → GoalModel class (goal success predictor)
+├── cluster_model.py         → ClusterModel class (behavioral archetype)
+├── behavioral_scoring.py    → Gemini-powered NLP → 10 numeric scores
+├── explainer.py             → Gemini explanation prompts + validators
+├── generate_datasets.py     → Dataset generation CLI (for re-training)
+├── test_and_validate.py     → Full test suite (train + threshold + sanity)
+└── data/
+    ├── health_score_dataset_v3.csv       (150,000 rows)
+    ├── waste_recovery_dataset_v6.csv     ( 80,000 rows)
+    ├── goal_intelligence_dataset_v2.csv  (150,000 rows)
+    ├── behavioral_clusters_dataset.csv   (120,000 rows)
+    └── health_weights.json
+
+
+How to Import:
+    from finsight_models_production import HealthModel, WasteModel, GoalModel, ClusterModel
+    from finsight_models_production import score_behavioral_answers
+    from finsight_models_production import explain_health, explain_waste, explain_goal
+    from finsight_models_production import validate_health_output, validate_waste_output, validate_goal_output
+
+
+================================================================================
+2. INSTALLATION & DEPENDENCIES
+================================================================================
+
+Required Python packages (add to your requirements.txt):
+
+    pandas>=2.0
+    numpy>=1.24
+    scikit-learn>=1.3
+    xgboost>=2.0
+    google-generativeai>=0.3    (for Gemini scoring + explanations)
+
+Install:
+    pip install pandas numpy scikit-learn xgboost google-generativeai
+
+Environment variable:
+    GEMINI_API_KEY=your_api_key_here
+
+Note: If GEMINI_API_KEY is not set, behavioral scoring will return
+neutral defaults (5.0 for all 10 dimensions) and explanations will
+return a fallback message. The ML models themselves DO NOT need Gemini.
+
+
+================================================================================
+3. WEBSITE FLOW (6 STAGES)
+================================================================================
+
+The FinSight AI website follows this exact user journey:
+
+    STAGE 1 → Registration / Login
+    STAGE 2 → Profile Setup (demographics)
+    STAGE 3 → Behavioral QNA (10 questions) → ClusterModel prediction
+    STAGE 4 → Health Score (uses QNA scores) → HealthModel prediction
+    STAGE 5 → Waste Audit (7 questions per sub) → WasteModel prediction
+    STAGE 6 → Goal Intelligence (user sets a goal) → GoalModel prediction
+
+Data Flow:
+    ┌──────────────────────────────────────────────────────────┐
+    │  User answers 10 behavioral Qs (natural language)        │
+    │              ↓                                           │
+    │  score_behavioral_answers() → 10 float scores            │
+    │              ↓                                           │
+    │  ClusterModel.predict() → archetype assignment           │
+    │  HealthModel.predict()  → health score + trend           │
+    │                                                          │
+    │  User enters subscriptions (7 questions per sub)          │
+    │              ↓                                           │
+    │  WasteModel.predict_subscription() → waste score         │
+    │  WasteModel.predict_bulk() → wealth efficiency report    │
+    │                                                          │
+    │  User sets a financial goal                              │
+    │              ↓                                           │
+    │  GoalModel.predict() → success probability + risk        │
+    │              ↓                                           │
+    │  explain_*() → Gemini-powered plain English summary      │
+    └──────────────────────────────────────────────────────────┘
+
+
+================================================================================
+4. THE 10 BEHAVIORAL QUESTIONS (EXACT TEXT + DESIGN)
+================================================================================
+
+These 10 questions are asked at STAGE 3. The user answers in natural
+language (free text). Gemini converts answers to numeric scores (1-10).
+
+All questions use this UI design pattern:
+    - Display the question text prominently
+    - Show the example answers as hints (gray placeholder text)
+    - Accept FREE TEXT input (not dropdowns or sliders)
+    - Users type their answer in their own words
+    - Gemini AI interprets and scores the answer
+
+────────────────────────────────────────────────────────────────
+Q1 — PAYDAY BEHAVIOR
+────────────────────────────────────────────────────────────────
+    Key:        "payday"
+    Column:     payday_behavior_score
+    Question:   "When your salary arrives, what do you do FIRST?"
+    Examples:   "save it, pay bills, spend on yourself, send to family"
+    Measures:   Save-first vs spend-first instinct
+
+────────────────────────────────────────────────────────────────
+Q2 — WEEKEND SPENDING
+────────────────────────────────────────────────────────────────
+    Key:        "weekend"
+    Column:     weekend_spend_score
+    Question:   "How do you spend on weekends compared to weekdays?"
+    Examples:   "spend a lot more, roughly same, less than usual"
+    Measures:   Weekend spending discipline
+
+────────────────────────────────────────────────────────────────
+Q3 — SUBSCRIPTION AWARENESS
+────────────────────────────────────────────────────────────────
+    Key:        "subs"
+    Column:     subscription_awareness_score
+    Question:   "Do you track all your apps/subscriptions and what they cost?"
+    Examples:   "yes I review them, no I forget them, sometimes"
+    Measures:   Awareness of recurring charges
+
+────────────────────────────────────────────────────────────────
+Q4 — IMPULSE CONTROL
+────────────────────────────────────────────────────────────────
+    Key:        "impulse"
+    Column:     impulse_control_score
+    Question:   "How often do you buy things without planning beforehand?"
+    Examples:   "often impulsively, sometimes, almost never"
+    Measures:   Impulse purchase resistance
+
+────────────────────────────────────────────────────────────────
+Q5 — GOAL HISTORY
+────────────────────────────────────────────────────────────────
+    Key:        "goal"
+    Column:     goal_history_score
+    Question:   "Have you ever set a savings goal and actually completed it?"
+    Examples:   "yes many times, once, tried but failed, never"
+    Measures:   Goal-setting track record
+
+────────────────────────────────────────────────────────────────
+Q6 — STRESS RESPONSE
+────────────────────────────────────────────────────────────────
+    Key:        "stress"
+    Column:     stress_response_score
+    Question:   "When you feel stressed about money, what do you do?"
+    Examples:   "spend to feel better, cut back on expenses, ask for help, ignore it"
+    Measures:   Financial stress coping mechanism
+
+────────────────────────────────────────────────────────────────
+Q7 — SOCIAL COMPARISON
+────────────────────────────────────────────────────────────────
+    Key:        "social"
+    Column:     social_comparison_score
+    Question:   "Do you spend more to keep up with friends or social media?"
+    Examples:   "yes I feel pressure, sometimes, no I don't care"
+    Measures:   Social-media spending pressure
+
+────────────────────────────────────────────────────────────────
+Q8 — EMERGENCY PREPAREDNESS
+────────────────────────────────────────────────────────────────
+    Key:        "emergency"
+    Column:     emergency_preparedness_score
+    Question:   "Do you have emergency savings to cover 3+ months of expenses?"
+    Examples:   "yes, partially, no, working on it"
+    Measures:   Emergency fund readiness
+
+────────────────────────────────────────────────────────────────
+Q9 — FUTURE PLANNING
+────────────────────────────────────────────────────────────────
+    Key:        "future"
+    Column:     future_planning_score
+    Question:   "Do you have a budget or financial plan for the next 6 months?"
+    Examples:   "yes detailed, rough idea, no plan at all"
+    Measures:   Forward financial planning
+
+────────────────────────────────────────────────────────────────
+Q10 — LEARNING ORIENTATION
+────────────────────────────────────────────────────────────────
+    Key:        "learning"
+    Column:     learning_orientation_score
+    Question:   "Do you read about saving, investing, or financial tips?"
+    Examples:   "yes regularly, sometimes, no I don't follow these"
+    Measures:   Financial literacy & curiosity
+
+────────────────────────────────────────────────────────────────
+
+SCORING SCALE (for all 10 questions):
+    1.0 = Very poor financial behavior
+    5.0 = Neutral / average
+    10.0 = Excellent financial behavior
+
+FRONTEND IMPLEMENTATION NOTES:
+    - Use a chat-style or card-style form interface
+    - Display one question per card/step (wizard pattern)
+    - Show the "Examples" as gray helper text beneath the question
+    - Accept any free-text answer (min 3 characters recommended)
+    - DO NOT validate against the examples — any text is valid
+    - After all 10 answers, send them to the backend for scoring
+    - Loading screen: "Analyzing your financial behavior..."
+
+
+================================================================================
+5. THE 7 WASTE AUDIT QUESTIONS (PER SUBSCRIPTION)
+================================================================================
+
+These questions are asked at STAGE 5. The user enters data for EACH
+subscription they want to audit. Repeat this block for each subscription.
+
+────────────────────────────────────────────────────────────────
+W1 — SUBSCRIPTION NAME
+────────────────────────────────────────────────────────────────
+    Field Key:  "name"
+    Type:       Text input
+    Question:   "Subscription Name"
+    Placeholder: "e.g. Netflix, Spotify, Gym"
+    Notes:      Free text. Used for display only.
+
+────────────────────────────────────────────────────────────────
+W2 — BILLING CYCLE
+────────────────────────────────────────────────────────────────
+    Field Key:  "billing_cycle"
+    Type:       Dropdown / Toggle
+    Question:   "Billing Cycle"
+    Options:    "monthly" | "yearly"
+    Notes:      If yearly, model auto-divides price by 12 for 
+                monthly cost comparison.
+
+────────────────────────────────────────────────────────────────
+W3 — SUBSCRIPTION PRICE
+────────────────────────────────────────────────────────────────
+    Field Key:  "price"
+    Type:       Number input (INR)
+    Question:   "Subscription Price (₹)"
+    Placeholder: "e.g. 199, 499, 1499"
+    Notes:      Enter the price matching the billing cycle.
+                Monthly price if billing is monthly.
+                Yearly price if billing is yearly.
+
+────────────────────────────────────────────────────────────────
+W4 — ACTUAL USAGE FREQUENCY
+────────────────────────────────────────────────────────────────
+    Field Key:  "usage_frequency"
+    Type:       Text input OR dropdown
+    Question:   "How often do you actually use this?"
+    Options/Examples:
+        "daily"             → usage_ratio = 1.0
+        "few_times_week"    → usage_ratio ≈ 0.43
+        "once_twice_week"   → usage_ratio ≈ 0.21
+        "few_times_month"   → usage_ratio ≈ 0.13
+        "rarely"            → usage_ratio = 0.05
+        "cant_remember"     → usage_ratio = 0.03
+    Notes:      Text is parsed by model._parse_usage().
+                Also accepts "3 days/week", "4 days/month" etc.
+
+────────────────────────────────────────────────────────────────
+W5 — AWARENESS LEVEL
+────────────────────────────────────────────────────────────────
+    Field Key:  "awareness"
+    Type:       Dropdown or text
+    Question:   "Do you notice when this charges your account?"
+    Options:
+        "always_notice"      → awareness_score = 10
+        "sometimes_notice"   → awareness_score = 6
+        "forget"             → awareness_score = 2
+    Also accepts: "yes", "remember" → 10; "sometimes" → 6; "forget" → 2
+
+────────────────────────────────────────────────────────────────
+W6 — SUBJECTIVE NECESSITY
+────────────────────────────────────────────────────────────────
+    Field Key:  "necessity"
+    Type:       Dropdown or text
+    Question:   "How important is this to you?"
+    Options:
+        "essential"     → necessity_score = 10
+        "nice_to_have"  → necessity_score = 6
+        "fun"           → necessity_score = 2
+    Also accepts: "must have", "need" → 10; "sometimes" → 6; "fun" → 2
+
+────────────────────────────────────────────────────────────────
+W7 — OTHER BENEFITS/PERKS
+────────────────────────────────────────────────────────────────
+    Field Key:  "has_perks"
+    Type:       Toggle (Yes/No)
+    Question:   "Does this give you other perks/benefits?"
+    Values:     true | false
+    Notes:      Boolean. True = 1 (15% waste reduction).
+
+
+FRONTEND IMPLEMENTATION NOTES:
+    - Use a repeatable card component. One card per subscription.
+    - "Add another subscription" button to add more cards.
+    - Minimum 1, no maximum limit.
+    - After submission, display the Wealth Report with all subs combined.
+    - For the wealth report, use WasteModel.predict_bulk() (not single).
+
+
+================================================================================
+6. MODEL 1: CLUSTER MODEL — API REFERENCE
+================================================================================
+
+Purpose:    Assigns users to one of 4 behavioral archetypes
+Stage:      STAGE 3 (right after QNA)
+Algorithm:  K-Means (K=4) on PCA-reduced behavioral vectors
+
+────────────────────────────────────────────────────────────────
+TRAINING
+────────────────────────────────────────────────────────────────
+
+    from finsight_models_production import ClusterModel
+    cluster = ClusterModel()
+    metrics = cluster.train()
+
+    # metrics = {
+    #     "status": "trained",
+    #     "archetypes": 4,
+    #     "silhouette_score": 0.3897,
+    #     "variance_explained": 0.7875,
+    # }
+
+────────────────────────────────────────────────────────────────
+PREDICTION
+────────────────────────────────────────────────────────────────
+
+    result = cluster.predict(behavioral_scores)
+
+    # behavioral_scores = {
+    #     "payday_behavior_score": 7.5,
+    #     "weekend_spend_score": 6.0,
+    #     "subscription_awareness_score": 8.0,
+    #     "impulse_control_score": 5.5,
+    #     "goal_history_score": 7.0,
+    #     "stress_response_score": 6.5,
+    #     "social_comparison_score": 4.0,
+    #     "emergency_preparedness_score": 8.5,
+    #     "future_planning_score": 7.0,
+    #     "learning_orientation_score": 6.0,
+    # }
+
+────────────────────────────────────────────────────────────────
+OUTPUT SCHEMA
+────────────────────────────────────────────────────────────────
+
+    {
+        "cluster_id": 0,                    # int (0-3)
+        "cluster_name": "Steady Accumulator", # str — archetype name
+        "cluster_description": "Characterized by high discipline...",
+        "cluster_averages": {               # Mean scores of this cluster
+            "payday_behavior_score": 7.2,
+            "weekend_spend_score": 6.8,
+            ...all 10 scores...
+        },
+        "user_scores": {                    # The user's own scores
+            "payday_behavior_score": 7.5,
+            ...
+        },
+        "metrics": {
+            "silhouette_score": 0.3897,
+            "variance_explained": 0.7875,
+        }
+    }
+
+────────────────────────────────────────────────────────────────
+THE 4 ARCHETYPES
+────────────────────────────────────────────────────────────────
+
+    Name                    Condition                       Description
+    ────────────────────    ────────────────────────────     ───────────────────────────
+    Steady Accumulator      planning ≥ 6.5 AND              High discipline and strategic
+                            discipline ≥ 6.5                long-term planning.
+
+    Impulse Explorer        social ≥ 6.0 AND                Spending reflects social
+                            discipline < 5.0                pressures; high wealth leakage.
+
+    Defensive Guardian      discipline ≥ 7.0 AND            Strong at saving but lacks a
+                            planning < 5.0                  clear long-term roadmap.
+
+    Developing Strategist   (all other cases)               Balanced profile in transition,
+                                                            building foundational habits.
+
+FRONTEND DISPLAY:
+    - Show the archetype name and description
+    - Radar chart: user scores vs cluster average
+    - Bar chart: user scores vs cluster average (side by side)
+    - Use cluster_averages for the "average" line in visualizations
+
+
+================================================================================
+7. MODEL 2: HEALTH MODEL — API REFERENCE
+================================================================================
+
+Purpose:    Predicts financial health score (0-100) + 30-day trend
+Stage:      STAGE 4
+Algorithm:  XGBRegressor (score) + XGBClassifier (trend)
+Dataset:    health_score_dataset_v3.csv (150K rows)
+
+────────────────────────────────────────────────────────────────
+TRAINING
+────────────────────────────────────────────────────────────────
+
+    from finsight_models_production import HealthModel
+    health = HealthModel()
+    metrics = health.train()
+
+    # metrics = {
+    #     "status": "trained",
+    #     "rows": 150000,
+    #     "score_rmse": 2.06,
+    #     "score_r2": 0.985,
+    #     "trend_accuracy": 0.7961,
+    # }
+
+────────────────────────────────────────────────────────────────
+PREDICTION
+────────────────────────────────────────────────────────────────
+
+    result = health.predict(
+        behavioral_scores=scores,       # dict of 10 BEHAVIOR_COLUMNS → float
+        emi_burden="light",             # "no_emi" | "light" | "moderate" | "heavy"
+        income_bracket="50k-100k",      # "below_20k" | "20k-50k" | "50k-100k" | "100k+"
+    )
+
+────────────────────────────────────────────────────────────────
+OUTPUT SCHEMA
+────────────────────────────────────────────────────────────────
+
+    {
+        "health_score": 72.5,           # float 0-100
+        "status_label": "Improving",    # str — score-derived label
+        "trend_label": "Improving",     # str — ML-predicted 30-day trend
+        "trajectory_score": 68.0,       # float 0-100 — behavioral momentum
+        "strengths": [                  # list of 2 strongest dimensions
+            {"name": "Emergency Preparedness", "value": 8.5},
+            {"name": "Future Planning", "value": 7.0},
+        ],
+        "weaknesses": [                 # list of 2 weakest dimensions
+            {"name": "Impulse Control", "value": 3.5},
+            {"name": "Social Comparison", "value": 4.0},
+        ],
+        "top_factors": [                # top 5 XGBoost feature importances
+            {"feature": "Impulse Control", "importance": 0.1823},
+            ...
+        ],
+        "model_metrics": {
+            "score_rmse": 2.06,
+            "score_r2": 0.985,
+            "trend_accuracy": 0.7961,
+        }
+    }
+
+────────────────────────────────────────────────────────────────
+TREND/STATUS LABELS (5-point scale)
+────────────────────────────────────────────────────────────────
+
+    Label               Score Range     Meaning
+    ─────────────────   ─────────────   ──────────────────────
+    Storm Warning       0 — 24          Severe financial distress
+    Rainy               25 — 39         Poor health, needs intervention
+    Partly Cloudy       40 — 54         Fair, room for improvement
+    Improving           55 — 74         Good, positive trajectory
+    Sunny               75 — 100        Excellent financial health
+
+RECONCILIATION RULE (v3 change):
+    If status_label and trend_label disagree by more than 1 step 
+    on the scale, trend_label is overridden to match status_label.
+    This prevents contradictions like "Sunny trend but Rainy score".
+
+FRONTEND DISPLAY:
+    - Large circular gauge showing health_score (0-100)
+    - Weather icon matching the status_label
+    - Strengths displayed as green badges
+    - Weaknesses displayed as red/orange badges
+    - No hardcoded text descriptions — use explain_health() for Gemini text
+
+
+================================================================================
+8. MODEL 3: WASTE MODEL — API REFERENCE
+================================================================================
+
+Purpose:    Detects subscription waste (0-100 score per subscription)
+Stage:      STAGE 5
+Algorithm:  XGBRegressor
+Dataset:    waste_recovery_dataset_v6.csv (80K rows)
+
+────────────────────────────────────────────────────────────────
+TRAINING
+────────────────────────────────────────────────────────────────
+
+    from finsight_models_production import WasteModel
+    waste = WasteModel()
+    metrics = waste.train()
+
+    # metrics = {
+    #     "status": "trained",
+    #     "rows": 80000,
+    #     "mae": 1.2432,
+    #     "rmse": 1.5718,
+    #     "r2": 0.9957,
+    # }
+
+────────────────────────────────────────────────────────────────
+SINGLE SUBSCRIPTION PREDICTION
+────────────────────────────────────────────────────────────────
+
+    result = waste.predict_subscription({
+        "name": "Netflix",
+        "billing_cycle": "monthly",     # "monthly" | "yearly"
+        "price": 199,                   # float (INR)
+        "usage_frequency": "daily",     # text (parsed by model)
+        "awareness": "always_notice",   # text (parsed by model)
+        "necessity": "essential",       # text (parsed by model)
+        "has_perks": True,              # bool
+    })
+
+────────────────────────────────────────────────────────────────
+SINGLE OUTPUT SCHEMA
+────────────────────────────────────────────────────────────────
+
+    {
+        "name": "Netflix",
+        "monthly_price": 199.0,
+        "yearly_cost": 2388.0,
+        "waste_score": 12.5,            # float 0-100 (lower = healthier)
+        "usage_pct": 100.0,             # float 0-100
+        "status": "🟢 Healthy",        # string with emoji
+        "top_drivers": [                # top 3 feature importances
+            {"feature": "Usage Ratio", "importance": 0.4231},
+            ...
+        ]
+    }
+
+────────────────────────────────────────────────────────────────
+BULK PREDICTION (recommended for website)
+────────────────────────────────────────────────────────────────
+
+    report = waste.predict_bulk([
+        {"name": "Netflix",  "billing_cycle": "monthly", "price": 199, ...},
+        {"name": "Spotify",  "billing_cycle": "monthly", "price": 119, ...},
+        {"name": "Gym",      "billing_cycle": "yearly",  "price": 12000, ...},
+    ])
+
+────────────────────────────────────────────────────────────────
+BULK OUTPUT SCHEMA
+────────────────────────────────────────────────────────────────
+
+    {
+        "subscriptions": [              # list of single prediction results
+            {...Netflix result...},
+            {...Spotify result...},
+            {...Gym result...},
+        ],
+        "annual_total": 5388.0,         # total yearly cost across all subs
+        "recoverable": 2388.0,          # yearly cost of subs with waste > 55
+        "finsight_score": 72.5,         # 100 - avg(waste_scores)
+        "verdict": "Decent control, but room to save more.",
+        "model_metrics": {"mae": 1.24, "rmse": 1.57, "r2": 0.9957}
+    }
+
+────────────────────────────────────────────────────────────────
+WASTE STATUS LABELS
+────────────────────────────────────────────────────────────────
+
+    waste_score    Status           Color    Meaning
+    ───────────    ──────────────   ─────    ───────────────────────
+    0 — 34         🟢 Healthy      Green    Good value for money
+    35 — 54        🟡 Caution      Yellow   Monitor usage closely
+    55 — 74        🟠 At Risk      Orange   High waste potential
+    75 — 100       🔴 Zombie       Red      Cancel immediately
+
+────────────────────────────────────────────────────────────────
+FINSIGHT WEALTH EFFICIENCY SCALE
+────────────────────────────────────────────────────────────────
+
+    Score Range    Grade               Meaning
+    ───────────    ──────────────────   ──────────────────────────────
+    0% — 20%       TOTAL WASTE          All money feeds ghost services
+    21% — 40%      CRITICAL LEAK        Most subs draining with no return
+    41% — 55%      WARNING ZONE         Half spending is unproductive
+    56% — 70%      MODERATE             Some waste but decent control
+    71% — 85%      HEALTHY              Strong discipline, minor tweaks
+    86% — 100%     THE MASTER           Perfect control, max value
+
+FRONTEND DISPLAY:
+    - Card per subscription with color-coded status badge
+    - Progress bar for finsight_score (0-100)
+    - "Recoverable Savings" callout box with annual amount
+    - Use explain_waste() for Gemini-generated text summary
+
+
+================================================================================
+9. MODEL 4: GOAL MODEL — API REFERENCE
+================================================================================
+
+Purpose:    Predicts savings goal success + identifies risk factors
+Stage:      STAGE 6
+Algorithm:  XGBClassifier (success) + RandomForest (risk factor)
+Dataset:    goal_intelligence_dataset_v2.csv (150K rows)
+
+────────────────────────────────────────────────────────────────
+TRAINING
+────────────────────────────────────────────────────────────────
+
+    from finsight_models_production import GoalModel
+    goal = GoalModel()
+    metrics = goal.train()
+
+    # metrics = {
+    #     "status": "trained",
+    #     "rows": 150000,
+    #     "success_accuracy": 0.8916,
+    #     "success_f1": 0.8857,
+    #     "success_logloss": 0.2282,
+    #     "risk_accuracy": 0.7711,
+    # }
+
+────────────────────────────────────────────────────────────────
+PREDICTION — INPUT PARAMETERS
+────────────────────────────────────────────────────────────────
+
+    result = goal.predict(
+        behavioral_scores=scores,           # dict of 10 BEHAVIOR_COLUMNS → float
+        goal_description="Trip to Goa",     # str — name of the goal
+        goal_target=50000,                  # float — target amount in INR
+        saved_so_far=8000,                  # float — already saved
+        monthly_savings=5000,               # float — monthly saving rate
+        months_remaining=6,                 # float — deadline in months
+    )
+
+────────────────────────────────────────────────────────────────
+OUTPUT SCHEMA
+────────────────────────────────────────────────────────────────
+
+    {
+        "goal_description": "Trip to Goa",
+        "success_probability": 82.5,        # float 0-100 (%)
+        "is_on_track": true,                # bool
+        "risk_factor": "Impulse Spending",  # str — top behavioral risk
+        "target_summary": {
+            "goal_amount": 50000,
+            "saved_so_far": 8000,
+            "saved_pct": 16.0,
+            "monthly_savings": 5000,
+            "months_remaining": 6,
+            "months_required_at_current_pace": 8.4,
+        },
+        "math_explanation": "At your current pace...",     # str
+        "behavioral_explanation": "Your behavioral data...", # str
+        "verdict": "Strong alignment...",                   # str
+        "top_drivers": [...],                               # list
+        "model_metrics": {...},                             # dict
+    }
+
+────────────────────────────────────────────────────────────────
+THE 8 RISK FACTORS
+────────────────────────────────────────────────────────────────
+
+    Risk Factor             Driven By                   Meaning
+    ────────────────────    ──────────────────────────   ────────────────────────
+    Impulse Spending        impulse_control_score        Unplanned purchases drain funds
+    Social Pressure         social_comparison_score      Keeping up with peers costs money
+    Poor Planning           future_planning_score        No roadmap = no progress
+    Low Savings Rate        payday_behavior_score        Not prioritizing savings
+    Emi Overload            emi_burden (heavy)           EMI eats into saving capacity
+    No Emergency Fund       emergency_preparedness       One crisis derails the goal
+    Lifestyle Inflation     weekend_spend_score          Spending creeps up with income
+    Income Instability      learning_orientation_score   Not building earning resilience
+
+FRONTEND DISPLAY:
+    - Success probability as a large percentage with color coding
+    - On-track badge (green) or Off-track badge (red)
+    - Risk factor highlighted with icon and explanation
+    - Timeline comparison: required months vs available months
+    - Use explain_goal() for Gemini-generated coaching text
+
+
+================================================================================
+10. GEMINI BEHAVIORAL SCORING ENGINE
+================================================================================
+
+File: behavioral_scoring.py
+Function: score_behavioral_answers(answers, api_key)
+
+This converts the 10 natural-language QNA answers into the 10 
+numeric scores needed by all 4 models.
+
+────────────────────────────────────────────────────────────────
+USAGE
+────────────────────────────────────────────────────────────────
+
+    from finsight_models_production import score_behavioral_answers
+
+    answers = {
+        "payday":    "I save 50% and pay bills with the rest",
+        "weekend":   "I spend a lot more on weekends",
+        "subs":      "I forget about most of my subscriptions",
+        "impulse":   "I buy things impulsively sometimes",
+        "goal":      "Yes I saved for a laptop last year",
+        "stress":    "I cut back when stressed",
+        "social":    "I don't care about what others buy",
+        "emergency": "I have 2 months saved",
+        "future":    "I have a rough budget",
+        "learning":  "I read finance blogs sometimes",
+    }
+
+    scores = score_behavioral_answers(answers, api_key="your_key")
+
+    # scores = {
+    #     "payday_behavior_score": 8.5,
+    #     "weekend_spend_score": 3.0,
+    #     "subscription_awareness_score": 2.0,
+    #     "impulse_control_score": 5.5,
+    #     "goal_history_score": 7.0,
+    #     "stress_response_score": 7.5,
+    #     "social_comparison_score": 9.0,
+    #     "emergency_preparedness_score": 5.0,
+    #     "future_planning_score": 5.0,
+    #     "learning_orientation_score": 5.5,
+    # }
+
+FALLBACK BEHAVIOR:
+    If Gemini API key is missing or call fails, all scores default to 5.0.
+
+KEY-TO-COLUMN MAPPING:
+    "payday"    → payday_behavior_score
+    "weekend"   → weekend_spend_score
+    "subs"      → subscription_awareness_score
+    "impulse"   → impulse_control_score
+    "goal"      → goal_history_score
+    "stress"    → stress_response_score
+    "social"    → social_comparison_score
+    "emergency" → emergency_preparedness_score
+    "future"    → future_planning_score
+    "learning"  → learning_orientation_score
+
+
+================================================================================
+11. GEMINI EXPLANATION LAYER (explainer.py)
+================================================================================
+
+After getting ML predictions, call the explainer to generate 
+user-facing text. This replaces all hardcoded descriptions.
+
+────────────────────────────────────────────────────────────────
+HEALTH EXPLANATION
+────────────────────────────────────────────────────────────────
+
+    from finsight_models_production import explain_health
+    text = explain_health(result, api_key="your_key")
+    # Returns: 3-paragraph plain English summary (< 120 words)
+
+────────────────────────────────────────────────────────────────
+WASTE EXPLANATION
+────────────────────────────────────────────────────────────────
+
+    from finsight_models_production import explain_waste
+    bulk_result = waste.predict_bulk(subscriptions)
+    text = explain_waste(bulk_result, api_key="your_key")
+    # Returns: 3-sentence sharp summary (< 90 words)
+
+────────────────────────────────────────────────────────────────
+GOAL EXPLANATION
+────────────────────────────────────────────────────────────────
+
+    from finsight_models_production import explain_goal
+    text = explain_goal(result, api_key="your_key")
+    # Returns: 4-sentence coaching summary (< 110 words)
+
+NOTES:
+    - All explanations require GEMINI_API_KEY
+    - If API unavailable, returns "[Gemini explanation unavailable]"
+    - Prompts are in explainer.py as HEALTH_PROMPT_TEMPLATE, 
+      WASTE_PROMPT_TEMPLATE, GOAL_PROMPT_TEMPLATE
+    - You can customize the prompts to match your brand voice
+
+
+================================================================================
+12. VALIDATION & OUTPUT RANGE CHECKS
+================================================================================
+
+Always validate model output before sending to frontend:
+
+    from finsight_models_production import (
+        validate_health_output,
+        validate_waste_output,
+        validate_goal_output,
+    )
+
+    # These raise AssertionError if output is out of range
+    validate_health_output(health_result)
+    # Checks: health_score in [0,100], status_label valid, trend_label valid
+
+    validate_waste_output(waste_result)
+    # Checks: waste_score in [0,100]
+
+    validate_goal_output(goal_result)
+    # Checks: success_probability in [0,100], is_on_track is bool
+
+VALID LABELS (health/trend):
+    Storm Warning, Rainy, Partly Cloudy, Improving, Sunny
+
+
+================================================================================
+13. METRIC THRESHOLDS (QUALITY GATES)
+================================================================================
+
+These thresholds define the minimum acceptable model quality.
+Run check_*_thresholds() after training to verify.
+
+    from finsight_models_production import (
+        check_health_thresholds,
+        check_waste_thresholds,
+        check_goal_thresholds,
+    )
+
+    failures = check_health_thresholds(metrics)
+    if failures:
+        print(f"HEALTH MODEL FAILED: {failures}")
+
+THRESHOLDS:
+
+    Health Model:
+        score_rmse     ≤ 8.0
+        score_r2       ≥ 0.85
+        trend_accuracy ≥ 0.70
+
+    Waste Model:
+        rmse           ≤ 6.0
+        r2             ≥ 0.90
+
+    Goal Model:
+        success_accuracy ≥ 0.80
+        success_f1       ≥ 0.75
+        risk_accuracy    ≥ 0.75
+
+CURRENT VALUES (passing):
+        Health:  RMSE=2.06, R²=0.985, TrendAcc=0.796
+        Waste:   RMSE=1.57, R²=0.996
+        Goal:    SuccAcc=0.892, F1=0.886, RiskAcc=0.771
+
+
+================================================================================
+14. QUICK-START FLASK INTEGRATION EXAMPLE
+================================================================================
+
+from flask import Flask, request, jsonify
+from finsight_models_production import (
+    HealthModel, WasteModel, GoalModel, ClusterModel,
+    score_behavioral_answers,
+    explain_health, explain_waste, explain_goal,
+    validate_health_output, validate_waste_output, validate_goal_output,
+)
+
+app = Flask(__name__)
+
+# ── Initialize and train models ONCE at startup ──
+cluster_model = ClusterModel()
+cluster_model.train()
+
+health_model = HealthModel()
+health_model.train()
+
+waste_model = WasteModel()
+waste_model.train()
+
+goal_model = GoalModel()
+goal_model.train()
+
+
+@app.route('/api/behavioral-qna', methods=['POST'])
+def behavioral_qna():
+    """Stage 3: Process 10 behavioral answers → cluster + scores"""
+    answers = request.json.get('answers', {})
+    api_key = request.json.get('api_key')
+
+    # Convert text answers to scores
+    scores = score_behavioral_answers(answers, api_key)
+
+    # Predict cluster
+    cluster_result = cluster_model.predict(scores)
+
+    return jsonify({
+        'scores': scores,
+        'cluster': cluster_result,
+    })
+
+
+@app.route('/api/health', methods=['POST'])
+def health_check():
+    """Stage 4: Health score prediction"""
+    data = request.json
+    scores = data.get('behavioral_scores', {})
+    emi = data.get('emi_burden', 'light')
+    income = data.get('income_bracket', '50k-100k')
+
+    result = health_model.predict(scores, emi_burden=emi, income_bracket=income)
+    validate_health_output(result)
+
+    # Optional: Generate Gemini explanation
+    result['explanation'] = explain_health(result, api_key=data.get('api_key'))
+
+    return jsonify(result)
+
+
+@app.route('/api/waste-audit', methods=['POST'])
+def waste_audit():
+    """Stage 5: Subscription waste analysis"""
+    subs = request.json.get('subscriptions', [])
+
+    report = waste_model.predict_bulk(subs)
+    for s in report['subscriptions']:
+        validate_waste_output(s)
+
+    # Optional: Generate Gemini explanation
+    report['explanation'] = explain_waste(report, api_key=request.json.get('api_key'))
+
+    return jsonify(report)
+
+
+@app.route('/api/goal', methods=['POST'])
+def goal_predict():
+    """Stage 6: Goal success prediction"""
+    data = request.json
+    scores = data.get('behavioral_scores', {})
+
+    result = goal_model.predict(
+        behavioral_scores=scores,
+        goal_description=data.get('goal_description', 'my goal'),
+        goal_target=data.get('goal_target', 100000),
+        saved_so_far=data.get('saved_so_far', 0),
+        monthly_savings=data.get('monthly_savings', 5000),
+        months_remaining=data.get('months_remaining', 12),
+    )
+    validate_goal_output(result)
+
+    # Optional: Generate Gemini explanation
+    result['explanation'] = explain_goal(result, api_key=data.get('api_key'))
+
+    return jsonify(result)
+
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)
+
+
+================================================================================
+15. ENVIRONMENT VARIABLES & CONFIGURATION
+================================================================================
+
+    GEMINI_API_KEY          Required for: behavioral scoring, explanations
+                            NOT required for: ML model training/prediction
+
+    IMPORTANT: Train all 4 models at server startup (app.py or __init__).
+    Training takes ~2 minutes total. Models stay in memory after that.
+
+    If deploying on a server with limited RAM:
+        - Health:  ~300 MB peak during training, ~80 MB steady
+        - Waste:   ~150 MB peak, ~40 MB steady
+        - Goal:    ~350 MB peak, ~90 MB steady
+        - Cluster: ~100 MB peak, ~30 MB steady
+        - Total steady-state: ~240 MB
+
+
+================================================================================
+16. COMMON ERRORS & TROUBLESHOOTING
+================================================================================
+
+    ERROR: "Call .train() first."
+    FIX:   You forgot to call model.train() before model.predict().
+           Train once at server startup.
+
+    ERROR: Module not found for finsight_models_production
+    FIX:   Ensure the finsight_models_production/ folder is in your 
+           Python path or in the same directory as your app.
+
+    ERROR: Gemini returns default scores (all 5.0)
+    FIX:   Check GEMINI_API_KEY is set. Check API quota.
+
+    ERROR: waste_score > 100
+    FIX:   This is fixed in v2. The model clamps output to [0, 100].
+           If you see this, you're using the old model.
+
+    ERROR: Trend and score contradict each other
+    FIX:   This is fixed in v3. Reconciliation ensures they match
+           within 1 step on the 5-point scale.
+
+    ERROR: GoalModel always predicts 0% probability
+    FIX:   This is fixed in v2. max_depth was reduced from 10 to 5
+           to prevent overfitting to training data.
+
+
+================================================================================
+END OF INTEGRATION GUIDE
+================================================================================
+    Package:         finsight_models_production
+    Total Models:    4 (Cluster, Health, Waste, Goal)
+    Total Datasets:  4 (500,000 total rows)
+    Questions:       10 behavioral + 7 per subscription
+    Status:          ALL MODELS PRODUCTION-READY
+    Last Validated:  18 April 2026
+================================================================================
