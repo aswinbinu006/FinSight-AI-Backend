@@ -19,22 +19,20 @@ from pydantic import BaseModel
 
 logger = logging.getLogger("finsight.security")
 
-import firebase_admin
-from firebase_admin import credentials, auth as firebase_auth
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 
-# Initialize Firebase Admin
-if not firebase_admin._apps:
-    try:
-        project_id = os.environ.get("FIREBASE_PROJECT_ID", "finsight-ai-app")
-        firebase_admin.initialize_app(options={'projectId': project_id})
-        logger.info("Firebase Admin initialized with PROJECT_ID.")
-    except Exception as e:
-        logger.error(f"Failed to initialize Firebase Admin: {e}")
+# We use google.oauth2 to verify the token without requiring a service account JSON file.
+# firebase_admin requires credentials on Render, but google.oauth2 only requires the public project ID.
+FIREBASE_PROJECT_ID = os.environ.get("FIREBASE_PROJECT_ID", "finsight-ai-app")
+_request = google_requests.Request()
 
-def verify_firebase_token(id_token: str) -> dict:
-    """Verify a Firebase ID token using firebase-admin."""
+def verify_firebase_token(id_token_str: str) -> dict:
+    """Verify a Firebase ID token using google.oauth2."""
     try:
-        return firebase_auth.verify_id_token(id_token)
+        # verify_firebase_token automatically fetches Google's public certificates,
+        # checks the signature, audience, issuer, expiration, etc.
+        return id_token.verify_firebase_token(id_token_str, _request, audience=FIREBASE_PROJECT_ID)
     except Exception as e:
         logger.error(f"Token verification error: {e}")
         raise HTTPException(
