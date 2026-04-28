@@ -251,7 +251,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="FinSight AI",
     description="Institutional-grade financial intelligence prediction engine.",
-    version="4.2.0",
+    version="4.2.1",
     lifespan=lifespan,
 )
 
