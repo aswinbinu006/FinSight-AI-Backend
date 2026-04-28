@@ -349,7 +349,7 @@ async def get_status():
         "service": "finsight-ai",
         "timestamp": datetime.now().isoformat(),
         "models_ready": ai.ready,
-        "version": "4.0.0",
+        "version": "4.1.0",
     }
 
 
