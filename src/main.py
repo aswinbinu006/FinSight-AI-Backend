@@ -39,7 +39,8 @@ except ImportError:
 # --- ML Models ---
 from finsight_models_production import (
     HealthModel, WasteModel, GoalModel, ClusterModel,
-    score_behavioral_answers, explain_health, explain_waste, explain_goal
+    score_behavioral_answers, explain_health, explain_waste, explain_goal,
+    chat_with_copilot
 )
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -231,6 +232,11 @@ class BehavioralScoringRequest(BaseModel):
         return v
 
 
+class CopilotChatRequest(BaseModel):
+    message: str
+    context: dict = Field(default_factory=dict)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # FASTAPI APP
 # ═══════════════════════════════════════════════════════════════════════
@@ -245,7 +251,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="FinSight AI",
     description="Institutional-grade financial intelligence prediction engine.",
-    version="4.1.0",
+    version="4.2.0",
     lifespan=lifespan,
 )
 
@@ -349,7 +355,7 @@ async def get_status():
         "service": "finsight-ai",
         "timestamp": datetime.now().isoformat(),
         "models_ready": ai.ready,
-        "version": "4.1.0",
+        "version": "4.0.0",
     }
 
 
@@ -451,6 +457,20 @@ async def get_behavioral_scores(
     except Exception as e:
         logger.error(f"Behavioral scoring error: {e}")
         raise HTTPException(500, f"Scoring failed: {str(e)}")
+
+
+@app.post("/chat/copilot")
+async def copilot_chat(
+    req: CopilotChatRequest,
+    user: dict = Depends(get_current_user_strict),
+):
+    """Deep financial intelligence chat using Gemini AI."""
+    try:
+        response = chat_with_copilot(req.message, req.context)
+        return {"response": response}
+    except Exception as e:
+        logger.error(f"Copilot chat error: {e}")
+        raise HTTPException(500, f"AI Co-Pilot is temporarily unavailable: {str(e)}")
 
 
 # ═══════════════════════════════════════════════════════════════════════

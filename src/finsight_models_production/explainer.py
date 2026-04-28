@@ -331,3 +331,45 @@ def explain_goal(result: dict, api_key: str | None = None) -> str:
         is_on_track=result['is_on_track'],
     )
     return _call_gemini(prompt, api_key)
+
+
+COPILOT_SYSTEM_PROMPT = """You are the FinSight AI Co-Pilot, an institutional-grade financial intelligence assistant.
+Your goal is to provide deep, contextual insights based on the user's current financial models (Health, Waste, Goal, and Behavioral).
+
+CONSTRAINTS:
+- Be concise but extremely insightful.
+- Use the provided context (Health Score, Waste Analysis, Goal Status) to back up your claims.
+- If a user asks a generic question, relate it back to their specific data.
+- Tone: Professional, slightly editorial (like The Economist), but highly accessible.
+- Never give generic advice like "save more money" without looking at their specific waste model or goal probability.
+- If they are in a "Critical" health band, be direct about the risks.
+
+CONTEXT INJECTION:
+{context_summary}
+
+The user's query: {message}
+"""
+
+
+def chat_with_copilot(message: str, context: dict, api_key: str | None = None) -> str:
+    """Natural language interface to the FinSight AI suite using Gemini."""
+    # Convert context dict into a readable summary for the prompt
+    context_lines = []
+    if "health" in context:
+        h = context["health"]
+        context_lines.append(f"- Health: {h.get('score', 'N/A')}/100 ({h.get('band', 'N/A')}), Status: {h.get('status', 'N/A')}")
+    if "waste" in context:
+        w = context["waste"]
+        context_lines.append(f"- Waste: {w.get('total_waste', 'N/A')} recoverable, Subscriptions: {w.get('sub_count', 0)}")
+    if "goal" in context:
+        g = context["goal"]
+        context_lines.append(f"- Goal: {g.get('name', 'N/A')} is {g.get('probability', 'N/A')}% likely ({g.get('band', 'N/A')})")
+    
+    summary = "\n".join(context_lines) if context_lines else "No specific model data available yet."
+    
+    prompt = COPILOT_SYSTEM_PROMPT.format(
+        context_summary=summary,
+        message=message
+    )
+    
+    return _call_gemini(prompt, api_key)

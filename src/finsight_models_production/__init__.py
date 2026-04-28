@@ -25,6 +25,7 @@ from finsight_models_production.explainer import (
     explain_health, explain_waste, explain_goal,
     validate_health_output, validate_waste_output, validate_goal_output,
     check_health_thresholds, check_waste_thresholds, check_goal_thresholds,
+    chat_with_copilot
 )
 
 
@@ -43,4 +44,5 @@ __all__ = [
     "check_health_thresholds",
     "check_waste_thresholds",
     "check_goal_thresholds",
+    "chat_with_copilot"
 ]
