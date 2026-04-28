@@ -190,7 +190,7 @@ class GoalModel:
         self.risk_map = {r: i for i, r in enumerate(unique_risks)}
         self.reverse_risk_map = {v: k for k, v in self.risk_map.items()}
 
-        y_risk = df_clean["top_risk_factor"].map(self.risk_map).astype(int).values
+        y_risk = df_clean["top_risk_factor"].map(self.risk_map).astype(int).values  # type: ignore
 
         X_tr_r, X_te_r, y_tr_r, y_te_r = train_test_split(X, y_risk, test_size=0.1, random_state=42)
 
@@ -272,6 +272,9 @@ class GoalModel:
         Predict goal success probability + risk factors.
         """
         assert self._trained, "Call .train() first or .load() a saved model."
+        assert self.encoder is not None
+        assert self.success_model is not None
+        assert self.risk_model is not None
 
         # Clamp AI answers structurally
         clamped_scores = {k: max(1.0, min(10.0, float(v))) for k, v in behavioral_scores.items()}
@@ -290,28 +293,28 @@ class GoalModel:
         X_num = np.array([[sample[col] for col in self.num_feature_names]])
 
         cat_df = pd.DataFrame([{col: sample[col] for col in self._CAT_FEATURES}])
-        X_cat = self.encoder.transform(cat_df)
+        X_cat = self.encoder.transform(cat_df)  # type: ignore
 
-        X_pred = np.hstack([X_num, X_cat])
+        X_pred = np.hstack([X_num, X_cat])  # type: ignore
 
         # Binary prediction
-        pred_success = self.success_model.predict(X_pred)[0]
-        pred_prob = float(self.success_model.predict_proba(X_pred)[0][1])
+        pred_success = self.success_model.predict(X_pred)[0]  # type: ignore
+        pred_prob = float(self.success_model.predict_proba(X_pred)[0][1])  # type: ignore
 
         # Risk prediction
-        pred_risk_idx = self.risk_model.predict(X_pred)[0]
+        pred_risk_idx = self.risk_model.predict(X_pred)[0]  # type: ignore
         risk_label = self.reverse_risk_map[pred_risk_idx]
 
         # ── Feature Importance Extraction ──
         base_estimator = getattr(self.success_model, 'estimator', self.success_model)
         if hasattr(base_estimator, 'feature_importances_'):
-            importances = base_estimator.feature_importances_
+            importances = base_estimator.feature_importances_  # type: ignore
         elif hasattr(base_estimator, 'coef_'):
             # Multi-class LR might have multiple rows of coefficients, take the max per feature
-            if len(base_estimator.coef_.shape) > 1:
-                importances = np.max(np.abs(base_estimator.coef_), axis=0)
+            if len(base_estimator.coef_.shape) > 1:  # type: ignore
+                importances = np.max(np.abs(base_estimator.coef_), axis=0)  # type: ignore
             else:
-                importances = np.abs(base_estimator.coef_[0])
+                importances = np.abs(base_estimator.coef_[0])  # type: ignore
         else:
             importances = np.zeros(len(self.feature_names))
             
@@ -379,6 +382,7 @@ class GoalModel:
     # Internals
     # ------------------------------------------------------------------
     def _pick_cohort(self, timeline, saved_pct, velocity):
+        assert self.df_clean is not None
         dc = self.df_clean
         candidates = [
             dc[
@@ -402,7 +406,7 @@ class GoalModel:
         cohort = self._pick_cohort(timeline, saved_pct, velocity)
 
         def _mode(col):
-            if cohort[col].notna().any():
+            if cohort[col].notna().any():  # type: ignore
                 return cohort[col].mode(dropna=True)[0]
             return self.mode_defaults.get(col, "")
 
@@ -418,7 +422,7 @@ class GoalModel:
             "income_bracket": _mode("income_bracket"),
             "occupation_type": _mode("occupation_type"),
             "family_size": _mode("family_size"),
-            "city_tier": cohort["city_tier"].dropna().mode()[0] if cohort["city_tier"].notna().any() else self.mode_defaults["city_tier"],
+            "city_tier": cohort["city_tier"].dropna().mode()[0] if cohort["city_tier"].notna().any() else self.mode_defaults["city_tier"],  # type: ignore
             "emi_burden": _mode("emi_burden"),
             "financial_dependents": str(_mode("financial_dependents")),
             "goal_amount_bracket": _mode("goal_amount_bracket"),

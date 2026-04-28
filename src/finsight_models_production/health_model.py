@@ -485,3 +485,14 @@ class HealthModel:
             "financial_dependents": str(cohort["financial_dependents"].mode(dropna=True)[0]) if cohort["financial_dependents"].notna().any() else self.mode_defaults["financial_dependents"],
         }
         return sample
+
+    def save(self, filepath: str):
+        """Serialize the trained model to disk."""
+        assert self._trained, "Call .train() before saving"
+        joblib.dump(self.__dict__, filepath)
+
+    def load(self, filepath: str):
+        """Load a serialized model from disk."""
+        state = joblib.load(filepath)
+        self.__dict__.update(state)
+        self._trained = True
