@@ -32,7 +32,8 @@ def verify_firebase_token(id_token_str: str) -> dict:
     try:
         # verify_firebase_token automatically fetches Google's public certificates,
         # checks the signature, audience, issuer, expiration, etc.
-        return id_token.verify_firebase_token(id_token_str, _request, audience=FIREBASE_PROJECT_ID)
+        payload = id_token.verify_firebase_token(id_token_str, _request, audience=FIREBASE_PROJECT_ID)
+        return dict(payload)
     except Exception as e:
         logger.error(f"Token verification error: {e}")
         raise HTTPException(
