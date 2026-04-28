@@ -24,21 +24,21 @@ from google.auth.transport import requests as google_requests
 
 # We use google.oauth2 to verify the token without requiring a service account JSON file.
 # firebase_admin requires credentials on Render, but google.oauth2 only requires the public project ID.
-FIREBASE_PROJECT_ID = os.environ.get("FIREBASE_PROJECT_ID", "finsight-ai-app")
 _request = google_requests.Request()
 
 def verify_firebase_token(id_token_str: str) -> dict:
     """Verify a Firebase ID token using google.oauth2."""
+    project_id = os.environ.get("FIREBASE_PROJECT_ID", "finsight-ai-app")
     try:
         # verify_firebase_token automatically fetches Google's public certificates,
         # checks the signature, audience, issuer, expiration, etc.
-        payload = id_token.verify_firebase_token(id_token_str, _request, audience=FIREBASE_PROJECT_ID)
+        payload = id_token.verify_firebase_token(id_token_str, _request, audience=project_id)
         return dict(payload)
     except Exception as e:
-        logger.error(f"Token verification error: {e}")
+        logger.error(f"Token verification error for project '{project_id}': {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials.",
+            detail=f"Could not validate credentials: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
