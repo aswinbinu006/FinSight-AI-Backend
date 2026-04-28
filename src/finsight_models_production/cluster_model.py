@@ -108,9 +108,10 @@ class ClusterModel:
         self._trained = True
         return {"status": "trained", "archetypes": 4, **self.metrics}
 
-    def save(self):
+    def save(self, filepath: str = None):
         """Persist the trained model state."""
         assert self._trained, "Cannot save an untrained model."
+        save_path = filepath or os.path.join(self._DATA_DIR, self._MODEL_FILE)
         data = {
             "kmeans": self.kmeans,
             "scaler": self.scaler,
@@ -120,11 +121,12 @@ class ClusterModel:
             "cluster_profiles": self.cluster_profiles,
             "metrics": self.metrics
         }
-        joblib.dump(data, os.path.join(self._DATA_DIR, self._MODEL_FILE))
+        joblib.dump(data, save_path)
 
-    def load(self):
+    def load(self, filepath: str = None):
         """Load a previously trained model state."""
-        data = joblib.load(os.path.join(self._DATA_DIR, self._MODEL_FILE))
+        load_path = filepath or os.path.join(self._DATA_DIR, self._MODEL_FILE)
+        data = joblib.load(load_path)
         self.kmeans = data["kmeans"]
         self.scaler = data["scaler"]
         self.pca = data["pca"]
